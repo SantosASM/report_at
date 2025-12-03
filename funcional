@@ -1,0 +1,186 @@
+import os
+import time
+import base64
+import asyncio
+from time import sleep
+from datetime import datetime
+from playwright.async_api import async_playwright, Playwright
+from playwright_stealth import Stealth
+
+URL_REPORT = "https://lookerstudio.google.com/reporting/29e20302-d517-4acd-acba-c0e9b1abb069/page/p_abtltvqdwd"
+
+async def login_looker():
+    async with async_playwright() as p:
+        context = await p.chromium.launch_persistent_context('out/chrome_profile', headless=True)
+        stealth = Stealth()
+        stealth.apply_stealth_sync(context)
+        page = await context.new_page()
+        await page.goto(URL_REPORT)
+        await page.set_viewport_size({
+            "width": 1400,
+            "height": 1080
+        })
+        input("Faça login no Google/Looker Studio se necessário e pressione Enter após carregar o relatório...")
+        print("Estado do Looker salvo no perfil persistente!")
+
+async def login_whatsapp():
+    async with async_playwright() as p:
+        context = await p.chromium.launch_persistent_context('out/chrome_profile', headless=True)
+        stealth = Stealth()
+        stealth.apply_stealth_sync(context)
+        page = await context.new_page()
+        await page.goto("https://web.whatsapp.com/")
+        input("Escaneie o QR code no WhatsApp Web se necessário e pressione Enter após o login...")
+        print("Estado do WhatsApp salvo no perfil persistente!")
+
+async def run(playwright: Playwright) -> None:
+    home_dir = os.path.expanduser("~")
+    screenshots_dir = os.path.join(home_dir, "Downloads", "Reports")
+    os.makedirs(screenshots_dir, exist_ok=True)
+
+    args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--window-size=1400,1700",
+        "--disable-infobars",
+        "--lang=pt-BR,pt,en-US,en",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process"
+    ]
+
+    context = await playwright.chromium.launch_persistent_context(
+        user_data_dir='out/chrome_profile',
+        headless=False,  # Mude para True após depuração
+        args=args,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        viewport={"width": 1400, "height": 1700},
+        ignore_default_args=["--enable-automation"],
+        java_script_enabled=True,
+        bypass_csp=True,
+        locale="pt-BR"
+    )
+    
+
+
+    stealth = Stealth()
+    stealth.apply_stealth_sync(context)
+    page = await context.new_page()
+    await page.goto(URL_REPORT, timeout=120000)
+    await page.wait_for_load_state("load", timeout=120000)
+    time.sleep(5)
+    await page.wait_for_selector("text=ARAUCAD PLANNING", timeout=60000)
+
+    async def hide_elements():
+        await page.evaluate("""
+            const hide = (sel) => {
+                const el = document.querySelector(sel);
+                if (el) el.style.display = 'none';
+            };
+            hide('header');
+            hide('.looker-header-bar');
+            hide('.looker-navigation-panel');
+            hide('.looker-app-toolbar');
+            hide('.looker-share-controls');
+        """)
+        await page.evaluate("document.body.style.zoom = '100%'")
+        await page.evaluate("window.scrollTo(0, 0);")
+        await page.wait_for_timeout(5000)
+
+    # Captura Gerencial
+    await page.locator("button.mat-mdc-button-base:has(span.mdc-button__label:has-text('Apresentação'))").click(timeout=60000)
+    await page.locator("button.mat-mdc-menu-item:has(span.mat-mdc-menu-item-text:has-text('Gerencial'))").click(timeout=60000)
+    await page.wait_for_load_state("load", timeout=60000)
+    await hide_elements()
+    screenshot_path = os.path.join(screenshots_dir, "Gerencial.png")
+    sleep(3)
+    await page.screenshot(path=screenshot_path, full_page=True)
+
+    # Navegação para Inhub
+    await page.locator("button.mat-mdc-button-base:has(span.mdc-button__label:has-text('Inhub'))").click(timeout=60000)
+    await page.locator("button.mat-mdc-menu-item:has(span.mat-mdc-menu-item-text:has-text('Inhub'))").first.click(timeout=60000)
+    await page.wait_for_load_state("load", timeout=60000)
+    await hide_elements()
+    sleep(3)
+    screenshot_path = os.path.join(screenshots_dir, "Inhub.png")
+    await page.screenshot(path=screenshot_path, full_page=True)
+
+    # Esteiras
+    await page.locator("button.mat-mdc-button-base:has(span.mdc-button__label:has-text('Sortable'))").click(timeout=60000)
+    await page.locator("button.mat-mdc-menu-item:has(span.mat-mdc-menu-item-text:has-text('Esteiras'))").click(timeout=60000)
+    await page.wait_for_load_state("load", timeout=60000)
+    await hide_elements()
+    sleep(3)
+    screenshot_path = os.path.join(screenshots_dir, "Esteiras.png")
+    await page.screenshot(path=screenshot_path, full_page=True)
+
+    # Envio ao WhatsApp
+    GROUP_NAME = "Control Tower da Depressão 😁"
+
+    whatsapp_page = await context.new_page()
+    await whatsapp_page.goto("https://web.whatsapp.com/", timeout=120000)
+    await whatsapp_page.wait_for_load_state("networkidle", timeout=120000)
+    time.sleep(5)
+
+    # ✅ Busca correta do grupo
+    print(f"Procurando grupo '{GROUP_NAME}'...")
+    search_box = whatsapp_page.locator('div[contenteditable="true"][data-tab="3"]')
+    await search_box.click()
+    await search_box.fill(GROUP_NAME)
+    await whatsapp_page.wait_for_timeout(2000)
+
+    # Clica no resultado correspondente
+    group_item = whatsapp_page.locator(f'span[title="{GROUP_NAME}"]').first
+    await group_item.click(timeout=60000)
+    await whatsapp_page.wait_for_timeout(2000)
+
+    arquivos = [f for f in os.listdir(screenshots_dir) if f.endswith('.png')]
+    if not arquivos:
+        print("Nenhum arquivo PNG encontrado na pasta.")
+        await context.close()
+        return
+
+    print(f"📤 Enviando {len(arquivos)} fotos para o grupo '{GROUP_NAME}'...")
+
+       
+
+    for arquivo in arquivos:
+        caminho_completo = os.path.join(screenshots_dir, arquivo)
+        legenda = f"Relatório atualizado: {arquivo}\n{datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        print(f"📎 Colando imagem '{arquivo}' na conversa...")
+
+        # Lê e converte imagem em base64
+        with open(caminho_completo, "rb") as img_file:
+            img_data = base64.b64encode(img_file.read()).decode("utf-8")
+
+        # Injeta imagem no clipboard da página e cola com Ctrl+V
+        await whatsapp_page.evaluate(f"""
+            async () => {{
+                const response = await fetch("data:image/png;base64,{img_data}");
+                const blob = await response.blob();
+                await navigator.clipboard.write([new ClipboardItem({{'image/png': blob}})]);
+            }}
+        """)
+        await whatsapp_page.keyboard.press("Control+V")
+        await whatsapp_page.wait_for_timeout(3000)
+
+        # Adiciona legenda (campo de texto editável)
+        #caption_input = whatsapp_page.locator('div[contenteditable="true"][role="textbox"]')
+        #await caption_input.type(legenda)
+        #await whatsapp_page.wait_for_timeout(1000)
+
+        # Enviar mensagem
+        await whatsapp_page.keyboard.press("Enter")
+        await whatsapp_page.wait_for_timeout(5000)
+
+
+    print("✅ Envio concluído!")
+    await context.close()
+
+async def main():
+    async with async_playwright() as playwright:
+        await run(playwright)
+
+if __name__ == "__main__":
+    asyncio.run(main())
